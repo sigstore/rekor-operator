@@ -2,6 +2,10 @@ domain: rekor.dev
 layout: go.kubebuilder.io/v2
 projectName: rekor-operator
 repo: github.com/projectrekor/rekor-operator
+resources:
+- group: operator
+  kind: Rekor
+  version: v1alpha1
 version: 3-alpha
 plugins:
   go.sdk.operatorframework.io/v2-alpha: {}

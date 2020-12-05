@@ -1,0 +1,7 @@
+apiVersion: operator.rekor.dev/v1alpha1
+kind: Rekor
+metadata:
+  name: rekor-sample
+spec:
+  # Add fields here
+  foo: bar
