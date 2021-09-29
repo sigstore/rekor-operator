@@ -1,4 +1,4 @@
-module github.com/projectrekor/rekor-operator
+module github.com/sigstore/rekor-operator
 
 go 1.16
 

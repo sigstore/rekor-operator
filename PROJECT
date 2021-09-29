@@ -1,7 +1,7 @@
 domain: rekor.dev
 layout: go.kubebuilder.io/v2
 projectName: rekor-operator
-repo: github.com/projectrekor/rekor-operator
+repo: github.com/sigstore/rekor-operator
 resources:
 - group: operator
   kind: Rekor
