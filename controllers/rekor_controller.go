@@ -16,27 +16,32 @@ package controllers
 
 import (
 	"context"
+	"time"
 
 	"github.com/go-logr/logr"
 	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/controller"
 
 	operatorv1alpha1 "github.com/sigstore/rekor-operator/api/v1alpha1"
+	"github.com/sigstore/rekor-operator/pkg/reconciler"
 )
 
 // RekorReconciler reconciles a Rekor object
 type RekorReconciler struct {
 	client.Client
-	Log    logr.Logger
-	Scheme *runtime.Scheme
+	Log              logr.Logger
+	ReconcileTimeout time.Duration
+	Scheme           *runtime.Scheme
 }
 
 // +kubebuilder:rbac:groups=operator.rekor.dev,resources=rekors,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=operator.rekor.dev,resources=rekors/status,verbs=get;update;patch
 
-func (r *RekorReconciler) Reconcile(req ctrl.Request) (ctrl.Result, error) {
-	_ = context.Background()
+func (r *RekorReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
+	_, cancel := context.WithTimeout(ctx, reconciler.DefaultedLoopTimeout(r.ReconcileTimeout))
+	defer cancel()
 	_ = r.Log.WithValues("rekor", req.NamespacedName)
 
 	// your logic here
@@ -44,8 +49,9 @@ func (r *RekorReconciler) Reconcile(req ctrl.Request) (ctrl.Result, error) {
 	return ctrl.Result{}, nil
 }
 
-func (r *RekorReconciler) SetupWithManager(mgr ctrl.Manager) error {
+func (r *RekorReconciler) SetupWithManager(ctx context.Context, mgr ctrl.Manager, options controller.Options) error {
 	return ctrl.NewControllerManagedBy(mgr).
+		WithOptions(options).
 		For(&operatorv1alpha1.Rekor{}).
 		Complete(r)
 }
