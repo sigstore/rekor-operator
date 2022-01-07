@@ -1,4 +1,4 @@
-// Copyright 2021 The Sigstore Authors
+// Copyright 2022 The Sigstore Authors
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -26,7 +26,7 @@ type RekorSpec struct {
 	// INSERT ADDITIONAL SPEC FIELDS - desired state of cluster
 	// Important: Run "make" to regenerate code after modifying this file
 
-	// Foo is an example field of Rekor. Edit Rekor_types.go to remove/update
+	// Foo is an example field of Rekor. Edit rekor_types.go to remove/update
 	Foo string `json:"foo,omitempty"`
 }
 
@@ -36,8 +36,8 @@ type RekorStatus struct {
 	// Important: Run "make" to regenerate code after modifying this file
 }
 
-// +kubebuilder:object:root=true
-// +kubebuilder:subresource:status
+//+kubebuilder:object:root=true
+//+kubebuilder:subresource:status
 
 // Rekor is the Schema for the rekors API
 type Rekor struct {
@@ -48,7 +48,7 @@ type Rekor struct {
 	Status RekorStatus `json:"status,omitempty"`
 }
 
-// +kubebuilder:object:root=true
+//+kubebuilder:object:root=true
 
 // RekorList contains a list of Rekor
 type RekorList struct {

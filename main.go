@@ -20,22 +20,21 @@ import (
 	"os"
 	"time"
 
-	// +kubebuilder:scaffold:imports
-
 	"github.com/spf13/pflag"
 	"k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
-	cgrecord "k8s.io/client-go/tools/record"
 	"k8s.io/klog/v2"
 	"k8s.io/klog/v2/klogr"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
+	"sigs.k8s.io/controller-runtime/pkg/healthz"
 
 	rekorv1alpha1 "github.com/sigstore/rekor-operator/api/v1alpha1"
 	"github.com/sigstore/rekor-operator/controllers"
 	"github.com/sigstore/rekor-operator/pkg/reconciler"
 	"github.com/sigstore/rekor-operator/pkg/version"
+	//+kubebuilder:scaffold:imports
 )
 
 var (
@@ -58,6 +57,7 @@ var (
 	watchNamespace              string
 	profilerAddress             string
 	healthAddr                  string
+	probeAddr                   string
 	webhookCertDir              string
 	webhookPort                 int
 	reconcileTimeout            time.Duration
@@ -72,6 +72,8 @@ func main() {
 	pflag.CommandLine.AddGoFlagSet(flag.CommandLine)
 	pflag.Parse()
 
+	ctrl.SetLogger(klogr.New())
+
 	if watchNamespace != "" {
 		setupLog.Info("Watching rekor objects only in namespace for reconciliation", "namespace", watchNamespace)
 	}
@@ -83,17 +85,11 @@ func main() {
 		}()
 	}
 
-	ctrl.SetLogger(klogr.New())
-
-	broadcaster := cgrecord.NewBroadcasterWithCorrelatorOptions(cgrecord.CorrelatorOptions{
-		BurstSize: 100,
-	})
-
 	mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), ctrl.Options{
 		Scheme:                  scheme,
 		MetricsBindAddress:      metricsAddr,
 		LeaderElection:          enableLeaderElection,
-		LeaderElectionID:        "16b7e8f1.rekor.dev",
+		LeaderElectionID:        "operator.rekor.dev",
 		LeaderElectionNamespace: leaderElectionNamespace,
 		LeaseDuration:           &leaderElectionLeaseDuration,
 		RenewDeadline:           &leaderElectionRenewDeadline,
@@ -103,26 +99,35 @@ func main() {
 		Port:                    webhookPort,
 		CertDir:                 webhookCertDir,
 		HealthProbeBindAddress:  healthAddr,
-		EventBroadcaster:        broadcaster,
 	})
 	if err != nil {
 		setupLog.Error(err, "unable to start manager")
 		os.Exit(1)
 	}
 
-	// Setup the context that's going to be used in controllers and for the manager.
-	ctx := ctrl.SetupSignalHandler()
-
 	if err = (&controllers.RekorReconciler{
 		Client:           mgr.GetClient(),
 		Log:              ctrl.Log.WithName("controllers").WithName("Rekor"),
 		ReconcileTimeout: reconcileTimeout,
 		Scheme:           mgr.GetScheme(),
-	}).SetupWithManager(ctx, mgr, controller.Options{}); err != nil {
+	}).SetupWithManager(mgr, controller.Options{}); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "Rekor")
 		os.Exit(1)
 	}
-	// +kubebuilder:scaffold:builder
+	if err := (&rekorv1alpha1.Rekor{}).SetupWebhookWithManager(mgr); err != nil {
+		setupLog.Error(err, "unable to create webhook", "webhook", "Rekor")
+		os.Exit(1)
+	}
+	//+kubebuilder:scaffold:builder
+
+	if err := mgr.AddHealthzCheck("healthz", healthz.Ping); err != nil {
+		setupLog.Error(err, "unable to set up health check")
+		os.Exit(1)
+	}
+	if err := mgr.AddReadyzCheck("readyz", healthz.Ping); err != nil {
+		setupLog.Error(err, "unable to set up ready check")
+		os.Exit(1)
+	}
 
 	if err := mgr.AddReadyzCheck("webhook", mgr.GetWebhookServer().StartedChecker()); err != nil {
 		setupLog.Error(err, "unable to create ready check")
@@ -135,7 +140,7 @@ func main() {
 	}
 
 	setupLog.Info("starting manager", "version", version.Get().String(), "extended_info", version.Get())
-	if err := mgr.Start(ctx); err != nil {
+	if err := mgr.Start(ctrl.SetupSignalHandler()); err != nil {
 		setupLog.Error(err, "problem running manager")
 		os.Exit(1)
 	}
@@ -144,14 +149,21 @@ func main() {
 func initFlags(fs *pflag.FlagSet) {
 	fs.StringVar(
 		&metricsAddr,
-		"metrics-addr",
+		"metrics-bind-address",
 		":8080",
 		"The address the metric endpoint binds to.",
 	)
 
+	fs.StringVar(
+		&probeAddr,
+		"health-probe-bind-address",
+		":8081",
+		"The address the probe endpoint binds to.",
+	)
+
 	fs.BoolVar(
 		&enableLeaderElection,
-		"enable-leader-election",
+		"leader-elect",
 		false,
 		"Enable leader election for controller manager. Enabling this will ensure there is only one active controller manager.",
 	)

@@ -1,4 +1,4 @@
-// Copyright 2021 The Sigstore Authors
+// Copyright 2022 The Sigstore Authors
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -13,8 +13,8 @@
 // limitations under the License.
 
 // Package v1alpha1 contains API Schema definitions for the operator v1alpha1 API group
-// +kubebuilder:object:generate=true
-// +groupName=operator.rekor.dev
+//+kubebuilder:object:generate=true
+//+groupName=operator.rekor.dev
 package v1alpha1
 
 import (

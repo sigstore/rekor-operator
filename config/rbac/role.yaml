@@ -20,6 +20,12 @@ rules:
 - apiGroups:
   - operator.rekor.dev
   resources:
+  - rekors/finalizers
+  verbs:
+  - update
+- apiGroups:
+  - operator.rekor.dev
+  resources:
   - rekors/status
   verbs:
   - get
