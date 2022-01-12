@@ -3,7 +3,7 @@ apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
   annotations:
-    controller-gen.kubebuilder.io/version: v0.7.0
+    controller-gen.kubebuilder.io/version: v0.8.0
   creationTimestamp: null
   name: rekors.operator.rekor.dev
 spec:
@@ -36,7 +36,7 @@ spec:
             description: RekorSpec defines the desired state of Rekor
             properties:
               foo:
-                description: Foo is an example field of Rekor. Edit Rekor_types.go
+                description: Foo is an example field of Rekor. Edit rekor_types.go
                   to remove/update
                 type: string
             type: object

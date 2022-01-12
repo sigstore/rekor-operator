@@ -1,4 +1,3 @@
-#
 # Copyright 2021 The Sigstore Authors.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -26,8 +25,6 @@ BUNDLE_DEFAULT_CHANNEL := --default-channel=$(DEFAULT_CHANNEL)
 endif
 BUNDLE_METADATA_OPTS ?= $(BUNDLE_CHANNELS) $(BUNDLE_DEFAULT_CHANNEL)
 
-# Image URL to use all building/pushing image targets
-IMG ?= controller:latest
 # Allow overriding manifest generation destination directory
 ROOT_DIR:=$(shell dirname $(realpath $(firstword $(MAKEFILE_LIST))))
 MANIFEST_ROOT ?= config
@@ -37,6 +34,12 @@ RBAC_ROOT ?= $(MANIFEST_ROOT)/rbac
 # Produce CRDs that work back to Kubernetes 1.11 (no version conversion)
 CRD_OPTIONS ?=
 
+# Image URL to use all building/pushing image targets
+IMG ?= controller:latest
+
+# ENVTEST_K8S_VERSION refers to the version of kubebuilder assets to be downloaded by envtest binary.
+ENVTEST_K8S_VERSION = 1.22
+KUBEBUILDER_ASSETS = $(shell go run sigs.k8s.io/controller-runtime/tools/setup-envtest@latest use $(ENVTEST_K8S_VERSION) -p path --bin-dir ${ROOT_DIR}/bin)
 
 # Get the currently used golang install path (in GOPATH/bin, unless GOBIN is set)
 ifeq (,$(shell go env GOBIN))
@@ -49,149 +52,163 @@ endif
 LDFLAGS := $(shell hack/version.sh)
 
 # Binaries.
-TOOLS_DIR := hack/tools
-TOOLS_BIN_DIR := $(abspath $(TOOLS_DIR)/bin)
-BIN_DIR := $(abspath $(ROOT_DIR)/bin)
-GO_INSTALL = ./scripts/go_install.sh
+CONTROLLER_GEN_VERSION := v0.8.0
+CONVERSION_GEN_VERSION := v0.23.1
+KUSTOMIZE_VERSION := v4.4.1
+ENVSUBST_VERSION := v1.2.0
 
-CONTROLLER_GEN_VER := v0.7.0
-CONTROLLER_GEN_BIN := controller-gen
-CONTROLLER_GEN := $(TOOLS_BIN_DIR)/$(CONTROLLER_GEN_BIN)-$(CONTROLLER_GEN_VER)
+.PHONY: manager
+manager: build
 
-CONVERSION_GEN_VER := v0.22.2
-CONVERSION_GEN_BIN := conversion-gen
-CONVERSION_GEN := $(TOOLS_BIN_DIR)/$(CONVERSION_GEN_BIN)-$(CONVERSION_GEN_VER)
-
-ENVSUBST_VER := v1.2.0
-ENVSUBST_BIN := envsubst
-ENVSUBST := $(TOOLS_BIN_DIR)/$(ENVSUBST_BIN)
-
-KUSTOMIZE_VER := v3.8.6
-KUSTOMIZE_BIN := kustomize
-KUSTOMIZE := $(TOOLS_BIN_DIR)/$(KUSTOMIZE_BIN)-$(KUSTOMIZE_VER)
-
-all: manager
-
-# Run tests
-ENVTEST_ASSETS_DIR = $(shell pwd)/testbin
-test: generate fmt vet manifests
-	mkdir -p $(ENVTEST_ASSETS_DIR)
-	test -f $(ENVTEST_ASSETS_DIR)/setup-envtest.sh || curl -sSLo $(ENVTEST_ASSETS_DIR)/setup-envtest.sh https://raw.githubusercontent.com/kubernetes-sigs/controller-runtime/v0.6.3/hack/setup-envtest.sh
-	source $(ENVTEST_ASSETS_DIR)/setup-envtest.sh; fetch_envtest_tools $(ENVTEST_ASSETS_DIR); setup_envtest_env $(ENVTEST_ASSETS_DIR); go test ./... -coverprofile cover.out
-
-# Build manager binary
-manager:
-	go build -a -trimpath -ldflags "$(LDFLAGS)" -o $(BIN_DIR)/manager .
-
-# Run against the configured Kubernetes cluster in ~/.kube/config
-run: generate fmt vet
-	go run ./main.go
-
-# Install CRDs into a cluster
-install: generate $(KUSTOMIZE)
-	$(KUSTOMIZE) build config/crd | kubectl apply -f -
-
-# Uninstall CRDs from a cluster
-uninstall: generate $(KUSTOMIZE)
-	$(KUSTOMIZE) build config/crd | kubectl delete -f -
-
-# Deploy controller in the configured Kubernetes cluster in ~/.kube/config
-deploy: generate $(KUSTOMIZE)
-	cd config/manager && $(KUSTOMIZE) edit set image controller=${IMG}
-	$(KUSTOMIZE) build config/default | kubectl apply -f -
-
-# Run go fmt against code
-fmt:
-	go fmt ./...
-
-# Run go vet against code
-vet:
-	go vet ./...
+##@ Development
 
 .PHONY: generate
-generate: ## Generate code
-	$(MAKE) generate-go
-	$(MAKE) generate-manifests
+generate: generate-go generate-manifests  ## Generate code and manifests.
 
 .PHONY: generate-go
-generate-go: $(CONTROLLER_GEN) $(CONVERSION_GEN) ## Runs Go related generate targets
+generate-go: controller-gen conversion-gen  ## Runs Go related generate targets.
 	$(CONTROLLER_GEN) \
 	paths="./api/..." \
 	object:headerFile="hack/boilerplate.go.txt"
 
 .PHONY: generate-manifests
-generate-manifests: $(CONTROLLER_GEN) ## Generate manifests e.g. CRD, RBAC etc.
+generate-manifests: controller-gen  ## Generate manifests e.g. CRD, RBAC etc.
 	$(CONTROLLER_GEN) \
-		paths=./api/... \
-		crd:crdVersions=v1 \
+		paths="./api/..." \
 		rbac:roleName=manager-role \
-		output:crd:dir=$(CRD_ROOT) \
-		output:webhook:dir=$(WEBHOOK_ROOT) \
-		webhook
+		crd \
+		webhook \
+		output:crd:artifacts:config=$(CRD_ROOT) \
+		output:webhook:dir=$(WEBHOOK_ROOT)
 	$(CONTROLLER_GEN) \
-		paths=./controllers/... \
+		paths="./controllers/..." \
 		output:rbac:dir=$(RBAC_ROOT) \
 		rbac:roleName=manager-role
 
-# Build the docker image
-docker-build:
-	docker build . --build-arg LDFLAGS="$(LDFLAGS)" -t ${IMG}
+.PHONY: fmt
+fmt:  ## Run go fmt against code.
+	go fmt ./...
 
-# Push the docker image
-docker-push:
-	docker push ${IMG}
+.PHONY: vet
+vet:  ## Run go vet against code.
+	go vet ./...
 
-## --------------------------------------
-## Tooling Binaries
-## --------------------------------------
+.PHONY: test
+test: generate fmt vet  ## Run tests.
+	KUBEBUILDER_ASSETS="$(KUBEBUILDER_ASSETS)" go test -v ./...
 
-$(ENVSUBST): ## Build envsubst from tools folder.
-	GOBIN=$(TOOLS_BIN_DIR) $(GO_INSTALL) github.com/a8m/envsubst/cmd/envsubst $(ENVSUBST_BIN) $(ENVSUBST_VER)
+.PHONY: coverage
+coverage: generate fmt vet  ## Take a test coverage.
+	KUBEBUILDER_ASSETS="$(KUBEBUILDER_ASSETS)" go test -v -covermode=atomic -coverpkg=./... -coverprofile=cover.out ./...
 
-$(KUSTOMIZE): ## Build kustomize from tools folder.
-	GOBIN=$(TOOLS_BIN_DIR) $(GO_INSTALL) sigs.k8s.io/kustomize/kustomize/v3 $(KUSTOMIZE_BIN) $(KUSTOMIZE_VER)
+##@ Build
 
-$(CONTROLLER_GEN): ## Build controller-gen from tools folder.
-	GOBIN=$(TOOLS_BIN_DIR) $(GO_INSTALL) sigs.k8s.io/controller-tools/cmd/controller-gen $(CONTROLLER_GEN_BIN) $(CONTROLLER_GEN_VER)
+.PHONY: build
+build: generate fmt vet  ## Build manager binary.
+	go build -o bin/manager main.go
 
-$(CONVERSION_GEN): ## Build conversion-gen.
-	GOBIN=$(TOOLS_BIN_DIR) $(GO_INSTALL) k8s.io/code-generator/cmd/conversion-gen $(CONVERSION_GEN_BIN) $(CONVERSION_GEN_VER)
+.PHONY: run
+run: generate fmt vet  ## Run a controller from your host.
+	go run ./main.go
 
-# Generate bundle manifests and metadata, then validate generated files.
 .PHONY: bundle
-bundle: generate $(KUSTOMIZE)
+bundle: generate kustomize  # Generate bundle manifests and metadata, then validate generated files.
 	operator-sdk generate kustomize manifests -q
 	cd config/manager && $(KUSTOMIZE) edit set image controller=$(IMG)
 	$(KUSTOMIZE) build config/manifests | operator-sdk generate bundle -q --overwrite --version $(VERSION) $(BUNDLE_METADATA_OPTS)
 	operator-sdk bundle validate ./bundle
 
-# Build the bundle image.
 .PHONY: bundle-build
-bundle-build:
+bundle-build:  # Build the bundle image.
 	docker build -f bundle.Dockerfile -t $(BUNDLE_IMG) .
 
-## --------------------------------------
-## Cleanup
-## --------------------------------------
+.PHONY: docker-build
+docker-build: test  ## Build docker image with the manager.
+	docker build -t ${IMG} .
+
+.PHONY: docker-push
+docker-push:  ## Push docker image with the manager.
+	docker push ${IMG}
+
+##@ Deployment
+
+ifndef ignore-not-found
+  ignore-not-found = false
+endif
+
+.PHONY: install
+install: generate kustomize  ## Install CRDs into the K8s cluster specified in ~/.kube/config.
+	$(KUSTOMIZE) build config/crd | kubectl apply -f -
+
+.PHONY: uninstall
+uninstall: generate kustomize  ## Uninstall CRDs from the K8s cluster specified in ~/.kube/config. Call with ignore-not-found=true to ignore resource not found errors during deletion.
+	$(KUSTOMIZE) build config/crd | kubectl delete --ignore-not-found=$(ignore-not-found) -f -
+
+.PHONY: deploy
+deploy: generate kustomize  ## Deploy controller to the K8s cluster specified in ~/.kube/config.
+	cd config/manager && $(KUSTOMIZE) edit set image controller=${IMG}
+	$(KUSTOMIZE) build config/default | kubectl apply -f -
+
+.PHONY: undeploy
+undeploy:  ## Undeploy controller from the K8s cluster specified in ~/.kube/config. Call with ignore-not-found=true to ignore resource not found errors during deletion.
+	$(KUSTOMIZE) build config/default | kubectl delete --ignore-not-found=$(ignore-not-found) -f -
+
+##@ Tooling Binaries
+
+CONTROLLER_GEN = $(shell pwd)/bin/controller-gen
+controller-gen: ${CONTROLLER_GEN}  ## Install controller-gen locally if necessary.
+${CONTROLLER_GEN}:
+	$(call install-tool,$(CONTROLLER_GEN),sigs.k8s.io/controller-tools/cmd/controller-gen@${CONTROLLER_GEN_VERSION})
+
+CONVERSION_GEN = $(shell pwd)/bin/conversion-gen
+conversion-gen: ${CONVERSION_GEN}  ## Install conversion-gen locally if necessary.
+${CONVERSION_GEN}:
+	$(call install-tool,$(CONVERSION_GEN),k8s.io/code-generator/cmd/conversion-gen@${CONVERSION_GEN_VERSION})
+
+KUSTOMIZE = $(shell pwd)/bin/kustomize
+kustomize: ${KUSTOMIZE}  ## Install kustomize locally if necessary.
+${KUSTOMIZE}:
+	$(call install-tool,$(KUSTOMIZE),sigs.k8s.io/kustomize/kustomize/v4@${KUSTOMIZE_VERSION})
+
+ENVTEST = $(shell pwd)/bin/setup-envtest
+envtest: ${ENVTEST}  ## Install envtest-setup locally if necessary.
+${ENVTEST}:
+	$(call install-tool,$(ENVTEST),sigs.k8s.io/controller-runtime/tools/setup-envtest@latest)
+
+# install-tool will 'go install' any package $2 and install it to $1.
+define install-tool
+@[ -f $(1) ] || { \
+set -e ;\
+TMP_DIR=$$(mktemp -d) ;\
+cd $$TMP_DIR ;\
+go mod init tmp > /dev/null 2>&1 ;\
+echo "Downloading $(2)" ;\
+go get $(2) > /dev/null 2>&1 ;\
+echo "package tmp\nimport (_ \"`echo $(2) | awk -F@ '{print $$1}'`\")" | tee tools.go > /dev/null 2>&1 ;\
+go mod tidy ;\
+GOBIN=${ROOT_DIR}/bin go install `echo $(2) | cut -d@ -f1` ;\
+rm -rf $$TMP_DIR ;\
+}
+endef
+
+##@ Cleanup
 
 .PHONY: clean
-clean: ## Remove all generated files
-	$(MAKE) clean-bin
-	$(MAKE) clean-temporary
+clean: clean-bin clean-temporary  ## Remove all generated files.
 
 .PHONY: clean-bin
-clean-bin: ## Remove all generated binaries
+clean-bin:  ## Remove all generated binaries.
+	@chmod 755 $(shell find ./bin/k8s -type d)
 	rm -rf bin
 	rm -rf hack/tools/bin
 
 .PHONY: clean-temporary
-clean-temporary: ## Remove all temporary files and folders
+clean-temporary:  ## Remove all temporary files and folders.
 	rm -f minikube.kubeconfig
 	rm -f kubeconfig
 
-## --------------------------------------
-## Help
-## --------------------------------------
+##@ Help
 
-help:  ## Display this help
-	@awk 'BEGIN {FS = ":.*##"; printf "\nUsage:\n  make \033[36m<target>\033[0m\n"} /^[a-zA-Z_-]+:.*?##/ { printf "  \033[36m%-15s\033[0m %s\n", $$1, $$2 } /^##@/ { printf "\n\033[1m%s\033[0m\n", substr($$0, 5) } ' $(MAKEFILE_LIST)
+.PHONY: help
+help:  ## Display this help.
+	@awk 'BEGIN {FS = ":.*##"; printf "\nUsage:\n  make \033[36m<target>\033[0m\n"} /^[a-zA-Z_0-9-]+:.*?##/ { printf "  \033[36m%-20s\033[0m %s\n", $$1, $$2 } /^##@/ { printf "\n\033[1m%s\033[0m\n", substr($$0, 5) } ' $(MAKEFILE_LIST)

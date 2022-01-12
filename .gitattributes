@@ -1,0 +1,9 @@
+# https://github.com/github/linguist/blob/master/docs/overrides.md
+
+# To prevent CRLF breakages on Windows for fragile files, like testdata.
+* -text
+
+*_gen.go     linguist-generated
+*_string.go  linguist-generated
+
+PROJECT      linguist-language=Yaml

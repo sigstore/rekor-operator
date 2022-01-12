@@ -14,8 +14,11 @@ COPY go.sum go.sum
 # and so that source changes don't invalidate our downloaded layer
 RUN go mod download
 
-# Copy the sources
-COPY ./ ./
+# Copy the go source
+COPY main.go main.go
+COPY api/ api/
+COPY controllers/ controllers/
+COPY pkg/ pkg/
 
 # Build
 ARG LDFLAGS
@@ -23,9 +26,11 @@ RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 \
   go build -a -trimpath -ldflags "${LDFLAGS} -extldflags '-static'" \
   -o manager .
 
-# Copy the controller-manager into a thin image
-FROM gcr.io/distroless/static:latest
+# Use distroless as minimal base image to package the manager binary
+# Refer to https://github.com/GoogleContainerTools/distroless for more details
+FROM gcr.io/distroless/static:nonroot
 WORKDIR /
 COPY --from=builder /workspace/manager .
 USER nobody
+
 ENTRYPOINT ["/manager"]
