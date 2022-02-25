@@ -1,6 +1,8 @@
 # Rekor Operator
 
-Operator for Rekor
+Operator for Rekor.
+
+<h3> 🚨 This project is not ready for usage, and it is under development. 🚨 </h3>
 
 ## Security
 
